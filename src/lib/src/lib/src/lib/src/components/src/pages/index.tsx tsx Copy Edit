@@ -1,0 +1,102 @@
+import React, { useState } from "react";
+import ThreeJSViewer from "../components/ThreeJSViewer";
+import BrainstormTab from "../components/BrainstormTab";
+import SolverTab from "../components/SolverTab";
+import CalculatorTab from "../components/CalculatorTab";
+import NotebookTab from "../components/NotebookTab";
+
+const tabs = ["Modeling", "Brainstorm", "Solver", "Calculator", "Notebook"] as const;
+type Tab = typeof tabs[number];
+
+export default function Home() {
+  const [activeTab, setActiveTab] = useState<Tab>("Modeling");
+  const [prompt, setPrompt] = useState("a hollow coffee mug with a lid and rounded handle");
+  const [modelSchema, setModelSchema] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function generateModel() {
+    setLoading(true);
+    setError(null);
+    setModelSchema(null);
+
+    try {
+      const res = await fetch("/api/generate-model", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      if (!res.ok) throw new Error("Failed to generate model");
+      const data = await res.json();
+      setModelSchema(data);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: 960, margin: "auto", padding: 16 }}>
+      <h1>Caddy Engineering Ecosystem</h1>
+      <nav style={{ marginBottom: 16 }}>
+        {tabs.map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            style={{
+              marginRight: 8,
+              padding: "8px 16px",
+              backgroundColor: activeTab === tab ? "#0070f3" : "#eee",
+              color: activeTab === tab ? "white" : "black",
+              border: "none",
+              borderRadius: 4,
+              cursor: "pointer",
+            }}
+          >
+            {tab}
+          </button>
+        ))}
+      </nav>
+
+      {activeTab === "Modeling" && (
+        <>
+          <textarea
+            rows={3}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            style={{ width: "100%", fontSize: 16, marginBottom: 8 }}
+          />
+          <button onClick={generateModel} disabled={loading} style={{ padding: "8px 16px" }}>
+            {loading ? "Generating..." : "Generate Model"}
+          </button>
+          {error && <p style={{ color: "red" }}>Error: {error}</p>}
+
+          {modelSchema && (
+            <>
+              <h3>3D Model JSON Schema:</h3>
+              <pre
+                style={{
+                  backgroundColor: "#f0f0f0",
+                  maxHeight: 300,
+                  overflowY: "auto",
+                  padding: 12,
+                  borderRadius: 6,
+                }}
+              >
+                {JSON.stringify(modelSchema, null, 2)}
+              </pre>
+              <div style={{ height: 500, border: "1px solid #ccc", borderRadius: 6 }}>
+                <ThreeJSViewer schema={modelSchema} />
+              </div>
+            </>
+          )}
+        </>
+      )}
+      {activeTab === "Brainstorm" && <BrainstormTab />}
+      {activeTab === "Solver" && <SolverTab />}
+      {activeTab === "Calculator" && <CalculatorTab />}
+      {activeTab === "Notebook" && <NotebookTab />}
+    </div>
+  );
+}
