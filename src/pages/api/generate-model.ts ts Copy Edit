@@ -1,0 +1,71 @@
+import type { NextApiRequest, NextApiResponse } from "next";
+import { z } from "zod";
+import { openai } from "../../lib/openai";
+import { modelSchema } from "../../lib/validation";
+
+const SYSTEM_PROMPT = `
+You are an AI assistant specialized in generating engineering 3D model schemas in JSON.
+The schema must have:
+- object_analysis: string
+- components: array of { name, type (cylinder|torus|box|sphere|cone), material?, hollow?, dimensions, position, rotation }
+Respond ONLY with valid JSON, no extra text.
+Example:
+{
+  "object_analysis": "A hollow coffee mug",
+  "components": [...]
+}
+`;
+
+const promptSchema = z.object({
+  prompt: z.string().min(5),
+});
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "Method not allowed" });
+    return;
+  }
+
+  const parseResult = promptSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({ error: "Invalid prompt" });
+    return;
+  }
+
+  try {
+    const userPrompt = `
+Generate an engineering 3D model JSON schema for the following description:
+
+"${parseResult.data.prompt}"
+
+Respond ONLY with JSON matching the schema.
+`;
+
+    const completion = await openai.createChatCompletion({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0,
+      max_tokens: 1000,
+    });
+
+    const rawText = completion.data.choices[0].message?.content.trim() ?? "";
+
+    // Attempt JSON parse with fallback
+    let parsedJson;
+    try {
+      parsedJson = JSON.parse(rawText);
+      // Validate parsed JSON with Zod schema
+      modelSchema.parse(parsedJson);
+    } catch (e) {
+      return res.status(500).json({ error: "Failed to parse or validate GPT output", raw: rawText });
+    }
+
+    return res.status(200).json(parsedJson);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "OpenAI API request failed" });
+  }
+}
